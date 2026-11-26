@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/storage/:path*",
-      "destination": "https://fixora-8jgn.onrender.com/storage/:path*"
+      "destination": "https://pub-b7af8ee9da664a46b57bb36890e0b545.r2.dev/:path*"
     },
     {
       "source": "/(.*)",
