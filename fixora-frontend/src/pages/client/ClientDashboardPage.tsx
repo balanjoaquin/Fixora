@@ -63,6 +63,25 @@ import {
 } from "@/services/api";
 import type { ClientTab, ServiceStatus, TechnicianSummary } from "@/types";
 
+const STORAGE_FALLBACK_URL =
+  "https://pub-b7af8ee9da664a46b57bb36890e0b545.r2.dev";
+
+function normalizeAvatarUrl(url?: string | null): string | null {
+  if (!url || !url.trim()) return null;
+  const clean = url.trim();
+  const storageMatch = clean.match(
+    /^(?:https?:\/\/(?:localhost|127\.0\.0\.1|fixora-8jgn\.onrender\.com)(?::\d+)?)?\/storage\/(.+)$/i
+  );
+  if (storageMatch) {
+    const base = (
+      (import.meta.env.VITE_STORAGE_URL as string | undefined)?.trim() ||
+      STORAGE_FALLBACK_URL
+    ).replace(/\/+$/, "");
+    return `${base}/${storageMatch[1]}`;
+  }
+  return clean;
+}
+
 export interface ApiServiceReview {
   id: number;
   rating: number;
@@ -145,39 +164,59 @@ export function getRawStatusLabel(status: string): string | null {
 function mapApiTechnicianToSummary(
   raw: Record<string, unknown>
 ): TechnicianSummary {
+  const profileObj =
+    raw.technician_profile && typeof raw.technician_profile === "object"
+      ? (raw.technician_profile as Record<string, unknown>)
+      : raw;
   const userObj =
     raw.user && typeof raw.user === "object"
       ? (raw.user as Record<string, unknown>)
-      : undefined;
-  const specialtiesList = Array.isArray(raw.specialties)
-    ? (raw.specialties as Array<{ id: number; name: string; slug?: string }>)
-    : [];
-  const servicesList = Array.isArray(raw.services)
-    ? (
-        raw.services as Array<{
-          id: number;
-          specialty_id?: number | null;
-          title: string;
-          description?: string | null;
-          reference_price?: string | number | null;
-        }>
-      ).map((srv) => ({
-        id: srv.id,
-        specialty_id: srv.specialty_id ?? specialtiesList[0]?.id ?? 0,
-        title: srv.title,
-        description: srv.description ?? null,
-        reference_price: srv.reference_price ?? null,
-      }))
-    : [];
+      : profileObj.user && typeof profileObj.user === "object"
+        ? (profileObj.user as Record<string, unknown>)
+        : undefined;
+
+  const specialtiesList = Array.isArray(profileObj.specialties)
+    ? (profileObj.specialties as Array<{ id: number; name: string; slug?: string }>)
+    : Array.isArray(raw.specialties)
+      ? (raw.specialties as Array<{ id: number; name: string; slug?: string }>)
+      : [];
+
+  const rawServices = Array.isArray(profileObj.services)
+    ? profileObj.services
+    : Array.isArray(raw.services)
+      ? raw.services
+      : [];
+
+  const servicesList = (
+    rawServices as Array<{
+      id: number;
+      specialty_id?: number | null;
+      title: string;
+      description?: string | null;
+      reference_price?: string | number | null;
+    }>
+  ).map((srv) => ({
+    id: srv.id,
+    specialty_id: srv.specialty_id ?? specialtiesList[0]?.id ?? 0,
+    title: srv.title,
+    description: srv.description ?? null,
+    reference_price: srv.reference_price ?? null,
+  }));
 
   const rawExp =
-    raw.years_experience ?? raw.experience_years ?? raw.experience;
+    profileObj.years_experience ??
+    profileObj.experience_years ??
+    raw.years_experience ??
+    raw.experience_years ??
+    raw.experience;
   const parsedExp =
     rawExp !== undefined && rawExp !== null && Number(rawExp) > 0
       ? Number(rawExp)
       : null;
 
   const rawZone =
+    profileObj.service_zone ??
+    profileObj.service_area ??
     raw.service_zone ??
     raw.service_area ??
     raw.zone ??
@@ -185,38 +224,96 @@ function mapApiTechnicianToSummary(
     raw.approx_zone ??
     "";
 
+  const rawAvatar =
+    typeof profileObj.avatar_url === "string"
+      ? profileObj.avatar_url
+      : typeof raw.avatar_url === "string"
+        ? raw.avatar_url
+        : typeof userObj?.avatar_url === "string"
+          ? userObj.avatar_url
+          : null;
+
+  const normalizedAvatar = normalizeAvatarUrl(rawAvatar);
+
   return {
-    id: String(raw.id ?? ""),
+    id: String(profileObj.id ?? raw.id ?? ""),
     name: String(raw.name ?? userObj?.name ?? "Especialista"),
-    headline: typeof raw.headline === "string" ? raw.headline : undefined,
+    headline:
+      typeof profileObj.headline === "string"
+        ? profileObj.headline
+        : typeof raw.headline === "string"
+          ? raw.headline
+          : undefined,
+    avatarUrl: normalizedAvatar,
+    avatar_url: normalizedAvatar,
     specialty:
       specialtiesList.map((s) => s.name).join(" • ") ||
-      (typeof raw.headline === "string" ? raw.headline : "Servicios Técnicos"),
+      (typeof profileObj.headline === "string"
+        ? profileObj.headline
+        : typeof raw.headline === "string"
+          ? raw.headline
+          : "Servicios Técnicos"),
     specialtyId: specialtiesList[0]?.id,
     specialties: specialtiesList,
     services: servicesList,
     experienceYears: parsedExp,
     rating:
-      raw.rating_avg !== undefined && raw.rating_avg !== null
-        ? Number(raw.rating_avg)
+      (profileObj.rating_avg ?? raw.rating_avg) !== undefined &&
+      (profileObj.rating_avg ?? raw.rating_avg) !== null
+        ? Number(profileObj.rating_avg ?? raw.rating_avg)
         : null,
     reviewsCount:
-      typeof raw.rating_count === "number"
-        ? raw.rating_count
-        : typeof raw.reviews_count === "number"
-          ? raw.reviews_count
-          : 0,
+      typeof profileObj.rating_count === "number"
+        ? profileObj.rating_count
+        : typeof raw.rating_count === "number"
+          ? raw.rating_count
+          : typeof raw.reviews_count === "number"
+            ? raw.reviews_count
+            : 0,
     completedCount:
-      typeof raw.completed_count === "number"
-        ? raw.completed_count
-        : typeof raw.completed_requests_count === "number"
-          ? raw.completed_requests_count
-          : 0,
+      typeof profileObj.completed_count === "number"
+        ? profileObj.completed_count
+        : typeof raw.completed_count === "number"
+          ? raw.completed_count
+          : typeof raw.completed_requests_count === "number"
+            ? raw.completed_requests_count
+            : 0,
     city: String(rawZone).trim(),
     available: true,
-    bio: String(raw.bio ?? ""),
+    bio: String(profileObj.bio ?? raw.bio ?? ""),
     certifications: [],
   };
+}
+
+function TechnicianCardAvatar({
+  src,
+  name,
+}: {
+  src?: string | null;
+  name: string;
+}) {
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [src]);
+
+  if (src && !imgError) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        onError={() => setImgError(true)}
+        className="w-12 h-12 rounded-xl object-cover border border-[#BFDBFE] bg-[#EFF6FF] shrink-0"
+      />
+    );
+  }
+
+  return (
+    <div className="w-12 h-12 rounded-xl bg-[#EFF6FF] flex items-center justify-center text-[#2563EB] shrink-0">
+      <Wrench size={22} />
+    </div>
+  );
 }
 
 function ClientAvatar({
@@ -229,10 +326,11 @@ function ClientAvatar({
   size?: "sm" | "md" | "lg";
 }) {
   const [imgError, setImgError] = useState(false);
+  const resolved = normalizeAvatarUrl(src);
 
   useEffect(() => {
     setImgError(false);
-  }, [src]);
+  }, [resolved]);
 
   const dimensions =
     size === "lg"
@@ -243,10 +341,10 @@ function ClientAvatar({
 
   const iconSize = size === "lg" ? 32 : size === "sm" ? 20 : 26;
 
-  if (src && !imgError) {
+  if (resolved && !imgError) {
     return (
       <img
-        src={src}
+        src={resolved}
         alt={name ? `Foto de perfil de ${name}` : "Foto de perfil"}
         onError={() => setImgError(true)}
         className={`${dimensions} object-cover border border-[#BFDBFE] bg-[#EFF6FF] flex-shrink-0`}
@@ -591,6 +689,29 @@ function ClientSearchView() {
     if (minRating && (tech.rating ?? 0) < Number(minRating)) {
       return false;
     }
+    if (query.trim()) {
+      const term = query.trim().toLowerCase();
+      const matchesName = tech.name.toLowerCase().includes(term);
+      const matchesHeadline = (tech.headline ?? "").toLowerCase().includes(term);
+      const matchesSpecialty = tech.specialty.toLowerCase().includes(term);
+      const matchesBio = tech.bio.toLowerCase().includes(term);
+      const matchesZone = tech.city.toLowerCase().includes(term);
+      const matchesService = (tech.services ?? []).some(
+        (s) =>
+          s.title.toLowerCase().includes(term) ||
+          (s.description ?? "").toLowerCase().includes(term)
+      );
+      if (
+        !matchesName &&
+        !matchesHeadline &&
+        !matchesSpecialty &&
+        !matchesBio &&
+        !matchesZone &&
+        !matchesService
+      ) {
+        return false;
+      }
+    }
     return true;
   });
 
@@ -638,8 +759,8 @@ function ClientSearchView() {
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar por servicio, palabra clave o especialidad..."
-              aria-label="Buscar por servicio, palabra clave o especialidad"
+              placeholder="Buscar por nombre, servicio, palabra clave o especialidad..."
+              aria-label="Buscar por nombre, servicio, palabra clave o especialidad"
               className="w-full min-h-[44px] pl-10 pr-4 py-2.5 rounded-xl border-2 border-[#E2E8F0] focus:border-[#2563EB] text-sm focus:outline-none focus:ring-4 focus:ring-[#2563EB]/10 transition-all"
             />
           </div>
@@ -751,9 +872,10 @@ function ClientSearchView() {
                 <div className="h-1.5 bg-gradient-to-r from-[#2563EB] to-[#3B82F6]" />
                 <div className="p-5">
                   <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="w-12 h-12 rounded-xl bg-[#EFF6FF] flex items-center justify-center text-[#2563EB]">
-                      <Wrench size={22} />
-                    </div>
+                    <TechnicianCardAvatar
+                      src={tech.avatarUrl ?? tech.avatar_url}
+                      name={tech.name}
+                    />
                     <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200">
                       <ShieldCheck size={12} />
                       Verificado

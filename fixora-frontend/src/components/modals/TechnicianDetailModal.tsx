@@ -14,7 +14,27 @@ import {
 import { PhotoGallery } from "@/components/common/PhotoGallery";
 import { Button } from "@/components/forms/Button";
 import { useNav } from "@/context/NavigationContext";
+import { getPublicTechnician } from "@/services/api";
 import type { TechnicianSummary } from "@/types";
+
+const STORAGE_FALLBACK_URL =
+  "https://pub-b7af8ee9da664a46b57bb36890e0b545.r2.dev";
+
+function normalizeAvatarUrl(url?: string | null): string | null {
+  if (!url || !url.trim()) return null;
+  const clean = url.trim();
+  const storageMatch = clean.match(
+    /^(?:https?:\/\/(?:localhost|127\.0\.0\.1|fixora-8jgn\.onrender\.com)(?::\d+)?)?\/storage\/(.+)$/i
+  );
+  if (storageMatch) {
+    const base = (
+      (import.meta.env.VITE_STORAGE_URL as string | undefined)?.trim() ||
+      STORAGE_FALLBACK_URL
+    ).replace(/\/+$/, "");
+    return `${base}/${storageMatch[1]}`;
+  }
+  return clean;
+}
 
 interface PublicCompletedWork {
   id: number;
@@ -69,6 +89,7 @@ export function TechnicianDetailModal({
   const [resolvedAvatarUrl, setResolvedAvatarUrl] = useState<string | null>(
     null
   );
+  const [avatarError, setAvatarError] = useState(false);
 
   const handleClose = () => {
     if (propOnClose) {
@@ -81,9 +102,15 @@ export function TechnicianDetailModal({
   useEffect(() => {
     if (!tech?.id) return;
     let active = true;
+
     setBioExpanded(false);
+    setReviews([]);
+    setCompletedWorks([]);
+    setAvatarError(false);
     setRealCompletedCount(tech.completedCount ?? 0);
-    setResolvedAvatarUrl(tech.avatarUrl ?? tech.avatar_url ?? null);
+    setResolvedAvatarUrl(
+      normalizeAvatarUrl(tech.avatarUrl ?? tech.avatar_url ?? null)
+    );
     setResolvedExpYears(
       tech.experienceYears && tech.experienceYears > 0
         ? tech.experienceYears
@@ -96,24 +123,28 @@ export function TechnicianDetailModal({
     (async () => {
       setLoadingDetails(true);
       try {
-        const baseUrl =
-          import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api/v1";
-        const token = localStorage.getItem("fixora_token");
-        const res = await fetch(`${baseUrl}/technicians/${tech.id}`, {
-          headers: {
-            Accept: "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-
-        if (!res.ok) return;
-        const json = await res.json();
+        const res = await getPublicTechnician(tech.id);
+        const json = res.data;
         const data = json?.data ?? json ?? {};
 
         if (!active) return;
 
-        if (typeof data.avatar_url === "string" && data.avatar_url.trim()) {
-          setResolvedAvatarUrl(data.avatar_url.trim());
+        const userObj =
+          data.user && typeof data.user === "object"
+            ? (data.user as Record<string, unknown>)
+            : undefined;
+
+        const rawAvatar =
+          typeof data.avatar_url === "string" && data.avatar_url.trim()
+            ? data.avatar_url
+            : typeof userObj?.avatar_url === "string" &&
+                userObj.avatar_url.trim()
+              ? userObj.avatar_url
+              : null;
+
+        if (rawAvatar) {
+          setAvatarError(false);
+          setResolvedAvatarUrl(normalizeAvatarUrl(rawAvatar));
         }
 
         const rawExp = data.years_experience ?? data.experience_years;
@@ -196,7 +227,7 @@ export function TechnicianDetailModal({
           setCompletedWorks(derivedWorks);
         }
       } catch {
-        // Silencioso si falla la carga extendida
+        // Mantiene datos base si falla la consulta extendida
       } finally {
         if (active) setLoadingDetails(false);
       }
@@ -215,6 +246,18 @@ export function TechnicianDetailModal({
       ? tech.bio || "Especialista verificado disponible para atención técnica."
       : `${tech.bio.slice(0, 220).trim()}...`;
 
+  const handleRequestFromDetail = () => {
+    const enrichedTech: TechnicianSummary = {
+      ...tech,
+      avatarUrl: resolvedAvatarUrl ?? tech.avatarUrl,
+      avatar_url: resolvedAvatarUrl ?? tech.avatar_url,
+      experienceYears: resolvedExpYears ?? tech.experienceYears,
+      city: resolvedZone || tech.city,
+      completedCount: realCompletedCount,
+    };
+    openModal({ type: "request-service", technician: enrichedTech });
+  };
+
   return (
     <div
       role="dialog"
@@ -230,10 +273,11 @@ export function TechnicianDetailModal({
         <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-start justify-between gap-4">
           <div className="flex items-start gap-3.5 min-w-0">
             <div className="w-14 h-14 rounded-2xl bg-[#0B1120] text-white flex items-center justify-center overflow-hidden border border-slate-200 shrink-0">
-              {resolvedAvatarUrl ? (
+              {resolvedAvatarUrl && !avatarError ? (
                 <img
                   src={resolvedAvatarUrl}
                   alt={tech.name}
+                  onError={() => setAvatarError(true)}
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -527,9 +571,7 @@ export function TechnicianDetailModal({
           <Button
             type="button"
             variant="primary"
-            onClick={() =>
-              openModal({ type: "request-service", technician: tech })
-            }
+            onClick={handleRequestFromDetail}
           >
             Solicitar servicio
           </Button>
