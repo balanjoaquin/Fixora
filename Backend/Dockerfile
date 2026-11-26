@@ -23,10 +23,12 @@ RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cac
 
 EXPOSE 80
 
-CMD sh -c "sed -i 's/80/\${PORT:-80}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf && \
+CMD sh -c 'P=${PORT:-80} && \
+    sed -E -i "s/Listen [0-9]+/Listen $P/g" /etc/apache2/ports.conf && \
+    sed -E -i "s/:[0-9]+/:$P/g" /etc/apache2/sites-available/000-default.conf && \
     php artisan package:discover --ansi && \
     php artisan storage:link || true && \
     php artisan migrate --force && \
     php artisan config:cache && \
     php artisan route:cache && \
-    apache2-foreground"
+    apache2-foreground'
