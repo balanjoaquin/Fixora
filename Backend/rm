@@ -1,0 +1,3 @@
+     UID     PID    PPID  TTY        STIME COMMAND
+ joaquin     581       1 cons0    13:26:48 /usr/bin/bash --init-file c:\Users\joaquin\AppData\Local\Programs\Microsoft VS Code\8a14f0cc1b\resources\app\out\vs\workbench\contrib\terminal\common\scripts/shellIntegration-bash.sh 
+ joaquin     657     581 cons0    13:27:51 PS C:xampphtdocsFixora_WebBackend -f app/Http/Requests/Api/V1/AccountResource.php git mv App app_tmp 

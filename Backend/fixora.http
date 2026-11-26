@@ -1,0 +1,106 @@
+@baseUrl = http://localhost:8000/api/v1
+@token = REEMPLAZAR_CON_TOKEN_SANCTUM
+
+### 1. Catálogo y directorio público
+GET {{baseUrl}}/specialties
+Accept: application/json
+
+###
+GET {{baseUrl}}/technicians
+Accept: application/json
+
+###
+GET {{baseUrl}}/technicians/1
+Accept: application/json
+
+### 2. Registro e inicio de sesión
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "Cliente Prueba",
+  "email": "cliente.prueba@example.test",
+  "password": "Password123",
+  "password_confirmation": "Password123",
+  "phone": "9381112233",
+  "role": "client"
+}
+
+###
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+Accept: application/json
+
+{
+  "email": "cliente.prueba@example.test",
+  "password": "Password123"
+}
+
+### 3. Verificación de correo y recuperación de contraseña (B7)
+POST {{baseUrl}}/auth/email/resend
+Authorization: Bearer {{token}}
+Accept: application/json
+
+###
+POST {{baseUrl}}/auth/forgot-password
+Content-Type: application/json
+Accept: application/json
+
+{
+  "email": "cliente.prueba@example.test"
+}
+
+###
+POST {{baseUrl}}/auth/reset-password
+Content-Type: application/json
+Accept: application/json
+
+{
+  "token": "TOKEN_DE_CORREO",
+  "email": "cliente.prueba@example.test",
+  "password": "NuevaPassword123",
+  "password_confirmation": "NuevaPassword123"
+}
+
+### 4. Notificaciones dentro de la app (B7)
+GET {{baseUrl}}/notifications?per_page=15
+Authorization: Bearer {{token}}
+Accept: application/json
+
+###
+GET {{baseUrl}}/notifications?unread=true
+Authorization: Bearer {{token}}
+Accept: application/json
+
+###
+GET {{baseUrl}}/notifications/unread-count
+Authorization: Bearer {{token}}
+Accept: application/json
+
+###
+POST {{baseUrl}}/notifications/REEMPLAZAR_UUID/read
+Authorization: Bearer {{token}}
+Accept: application/json
+
+###
+POST {{baseUrl}}/notifications/read-all
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### 5. Solicitudes y reseñas
+POST {{baseUrl}}/requests
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "technician_profile_id": 1,
+  "specialty_id": 1,
+  "title": "Revisión de instalación eléctrica",
+  "description": "Falla intermitente en tablero principal.",
+  "address_line": "Calle 31 #45",
+  "approx_zone": "Centro",
+  "preferred_date": "2026-11-25",
+  "preferred_start": "10:00"
+}

@@ -1,0 +1,37 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Requests\Api\V1;
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rules\Password;
+
+class ResetPasswordRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function rules(): array
+    {
+        return [
+            'token' => ['required', 'string'],
+            'email' => ['required', 'string', 'email', 'max:255'],
+            'password' => ['required', 'string', 'confirmed', Password::min(8)->letters()->numbers()],
+        ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if (is_string($this->email)) {
+            $this->merge([
+                'email' => mb_strtolower(trim($this->email)),
+            ]);
+        }
+    }
+}
