@@ -79,6 +79,10 @@ export function RequestServiceModal({
   const activeDefaultZone = modalData?.defaultZone;
   const activeDefaultTitle = modalData?.defaultTitle;
 
+  const lockedTechId = activeTechnician?.id
+    ? String(activeTechnician.id).trim()
+    : "";
+
   const handleClose = () => {
     if (onClose) {
       onClose();
@@ -87,16 +91,56 @@ export function RequestServiceModal({
     }
   };
 
-  const [technicians, setTechnicians] = useState<TechnicianOption[]>([]);
+  const [technicians, setTechnicians] = useState<TechnicianOption[]>(() => {
+    if (!activeTechnician || !lockedTechId) return [];
+    return [
+      {
+        profileId: Number(lockedTechId),
+        name: activeTechnician.name,
+        specialties: Array.isArray(activeTechnician.specialties)
+          ? activeTechnician.specialties.map((s) => ({
+              id: s.id,
+              name: s.name,
+            }))
+          : [],
+        services: Array.isArray(activeTechnician.services)
+          ? activeTechnician.services.map((sv) => ({
+              id: sv.id,
+              specialty_id: sv.specialty_id,
+              title: sv.title,
+              description: sv.description ?? null,
+              reference_price: sv.reference_price ?? null,
+              is_active: true,
+            }))
+          : [],
+      },
+    ];
+  });
+
   const [catalogSpecialties, setCatalogSpecialties] = useState<SpecialtyOption[]>(
     []
   );
-  const [techSpecialties, setTechSpecialties] = useState<SpecialtyOption[]>([]);
-  const [techServices, setTechServices] = useState<CatalogServiceOption[]>([]);
-
-  const [selectedTechnicianId, setSelectedTechnicianId] = useState<string>(() =>
-    activeTechnician?.id ? String(activeTechnician.id) : ""
+  const [techSpecialties, setTechSpecialties] = useState<SpecialtyOption[]>(
+    () =>
+      Array.isArray(activeTechnician?.specialties)
+        ? activeTechnician.specialties.map((s) => ({ id: s.id, name: s.name }))
+        : []
   );
+  const [techServices, setTechServices] = useState<CatalogServiceOption[]>(() =>
+    Array.isArray(activeTechnician?.services)
+      ? activeTechnician.services.map((sv) => ({
+          id: sv.id,
+          specialty_id: sv.specialty_id,
+          title: sv.title,
+          description: sv.description ?? null,
+          reference_price: sv.reference_price ?? null,
+          is_active: true,
+        }))
+      : []
+  );
+
+  const [selectedTechnicianId, setSelectedTechnicianId] =
+    useState<string>(lockedTechId);
   const [selectedServiceId, setSelectedServiceId] = useState<string>("");
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>("");
   const [customSpecialty, setCustomSpecialty] = useState<string>("");
@@ -120,7 +164,7 @@ export function RequestServiceModal({
     useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const techniciansRef = useRef<TechnicianOption[]>([]);
+  const techniciansRef = useRef<TechnicianOption[]>(technicians);
   useEffect(() => {
     techniciansRef.current = technicians;
   }, [technicians]);
@@ -132,49 +176,13 @@ export function RequestServiceModal({
     setLoadingInitial(true);
     setError(null);
     setPhotos([]);
-    if (activeDefaultZone) setApproxZone(activeDefaultZone);
-    if (activeDefaultTitle) setTitle(activeDefaultTitle);
-
-    if (activeTechnician?.id) {
-      const preId = Number(activeTechnician.id);
-      setSelectedTechnicianId(String(activeTechnician.id));
-      if (preId > 0) {
-        setTechnicians((prev) =>
-          prev.some((t) => t.profileId === preId)
-            ? prev
-            : [
-                {
-                  profileId: preId,
-                  name: activeTechnician.name,
-                  specialties: Array.isArray(activeTechnician.specialties)
-                    ? activeTechnician.specialties.map((s) => ({
-                        id: s.id,
-                        name: s.name,
-                      }))
-                    : [],
-                  services: Array.isArray(activeTechnician.services)
-                    ? activeTechnician.services.map((sv) => ({
-                        id: sv.id,
-                        specialty_id: sv.specialty_id,
-                        title: sv.title,
-                        description: sv.description ?? null,
-                        reference_price: sv.reference_price ?? null,
-                        is_active: true,
-                      }))
-                    : [],
-                },
-                ...prev,
-              ]
-        );
-      }
-    }
 
     (async () => {
       await refreshUser();
 
       try {
         const [techRes, specRes] = await Promise.allSettled([
-          searchTechnicians({ per_page: 24 }),
+          searchTechnicians({ per_page: 50 }),
           getSpecialties(),
         ]);
 
@@ -259,12 +267,17 @@ export function RequestServiceModal({
           }
         }
 
-        if (activeTechnician) {
-          const preId = Number(activeTechnician.id);
-          if (
-            preId > 0 &&
-            !mappedTechs.some((t) => t.profileId === preId)
-          ) {
+        if (activeTechnician && lockedTechId) {
+          const preId = Number(lockedTechId);
+          const existingIdx = mappedTechs.findIndex(
+            (t) => t.profileId === preId
+          );
+          if (existingIdx >= 0) {
+            mappedTechs[existingIdx] = {
+              ...mappedTechs[existingIdx],
+              name: activeTechnician.name || mappedTechs[existingIdx].name,
+            };
+          } else if (preId > 0) {
             mappedTechs.unshift({
               profileId: preId,
               name: activeTechnician.name,
@@ -290,22 +303,20 @@ export function RequestServiceModal({
 
         setTechnicians(mappedTechs);
 
-        const initialTechId = activeTechnician?.id
-          ? String(activeTechnician.id)
-          : mappedTechs[0]
-            ? String(mappedTechs[0].profileId)
-            : "";
-        setSelectedTechnicianId(initialTechId);
+        const targetTechId =
+          lockedTechId ||
+          (mappedTechs[0] ? String(mappedTechs[0].profileId) : "");
+        setSelectedTechnicianId(targetTechId);
 
-        const initialTech = mappedTechs.find(
-          (t) => String(t.profileId) === initialTechId
+        const targetTech = mappedTechs.find(
+          (t) => String(t.profileId) === targetTechId
         );
         const availableSpecs =
-          initialTech && initialTech.specialties.length > 0
-            ? initialTech.specialties
+          targetTech && targetTech.specialties.length > 0
+            ? targetTech.specialties
             : parsedSpecs;
         setTechSpecialties(availableSpecs);
-        setTechServices(initialTech?.services ?? []);
+        setTechServices(targetTech?.services ?? []);
 
         if (activeDefaultSpecialty && activeDefaultSpecialty.trim() !== "") {
           const found = availableSpecs.find(
@@ -335,10 +346,9 @@ export function RequestServiceModal({
     };
   }, [
     isOpen,
+    lockedTechId,
     activeTechnician,
     activeDefaultSpecialty,
-    activeDefaultZone,
-    activeDefaultTitle,
     refreshUser,
   ]);
 
@@ -574,7 +584,9 @@ export function RequestServiceModal({
                 Solicitar Servicio Técnico
               </h2>
               <p className="text-[11px] sm:text-xs text-slate-500 truncate">
-                Nueva orden de servicio
+                {activeTechnician
+                  ? `Para: ${activeTechnician.name}`
+                  : "Nueva orden de servicio"}
               </p>
             </div>
           </div>
@@ -642,7 +654,7 @@ export function RequestServiceModal({
               <select
                 value={selectedTechnicianId}
                 onChange={(e) => setSelectedTechnicianId(e.target.value)}
-                disabled={loadingInitial}
+                disabled={loadingInitial && !lockedTechId}
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs sm:text-sm text-[#0F172A] focus:border-[#1D63ED] focus:outline-none"
               >
                 {technicians.length === 0 ? (
@@ -864,7 +876,7 @@ export function RequestServiceModal({
           <button
             type="submit"
             form="request-service-form"
-            disabled={submitting || loadingInitial}
+            disabled={submitting || (loadingInitial && !lockedTechId)}
             className="rounded-xl bg-[#1D63ED] px-5 py-2 text-xs sm:text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60 transition-colors cursor-pointer"
           >
             {submitting ? "Enviando solicitud..." : "Enviar Solicitud"}
