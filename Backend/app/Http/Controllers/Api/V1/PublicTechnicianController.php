@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\TechnicianProfile;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,6 +28,7 @@ class PublicTechnicianController extends Controller
         $query = User::query()
             ->where('role', 'technician')
             ->where('status', 'active')
+            ->whereHas('technicianProfile')
             ->with(['technicianProfile.specialties', 'technicianProfile.services']);
 
         if (! empty($validated['q'])) {
@@ -105,45 +107,61 @@ class PublicTechnicianController extends Controller
 
     public function show(int $id): JsonResponse
     {
-        $tech = User::query()
-            ->where('role', 'technician')
-            ->where('status', 'active')
-            ->with([
-                'technicianProfile.specialties',
-                'technicianProfile.services',
-                'technicianProfile.availabilitySlots',
-            ])
-            ->where(function ($q) use ($id): void {
-                $q->where('id', $id)
-                    ->orWhereHas('technicianProfile', function ($prof) use ($id): void {
-                        $prof->where('id', $id);
-                    });
+        // 1. Buscar prioritariamente por technician_profiles.id
+        $profile = TechnicianProfile::query()
+            ->where('id', $id)
+            ->whereHas('user', function ($q): void {
+                $q->where('role', 'technician')
+                    ->where('status', 'active');
             })
-            ->firstOrFail();
+            ->with([
+                'user',
+                'specialties',
+                'services',
+                'availabilitySlots',
+            ])
+            ->first();
 
-        $profile = $tech->technicianProfile;
+        // 2. Respaldo por users.id solo si no coincidió ningún profile.id
+        if (! $profile) {
+            $profile = TechnicianProfile::query()
+                ->where('user_id', $id)
+                ->whereHas('user', function ($q): void {
+                    $q->where('role', 'technician')
+                        ->where('status', 'active');
+                })
+                ->with([
+                    'user',
+                    'specialties',
+                    'services',
+                    'availabilitySlots',
+                ])
+                ->firstOrFail();
+        }
+
+        $tech = $profile->user;
 
         return response()->json([
             'data' => [
-                'id' => $profile?->id ?? $tech->id,
+                'id' => $profile->id,
                 'user_id' => $tech->id,
                 'name' => $tech->name,
                 'email' => $tech->email,
                 'phone' => $tech->phone,
-                'headline' => $profile?->headline ?? '',
-                'bio' => $profile?->bio ?? '',
-                'avatar_url' => $profile?->avatar_url,
-                'service_zone' => $profile?->service_zone ?? '',
-                'service_area' => $profile?->service_zone ?? '',
-                'years_experience' => $profile?->years_experience ?? 0,
-                'experience_years' => $profile?->years_experience ?? 0,
-                'is_available' => $profile?->is_visible ?? true,
-                'rating_avg' => $profile?->rating_avg ?? 0,
-                'rating_count' => $profile?->rating_count ?? 0,
-                'completed_count' => $profile?->completed_count ?? 0,
-                'specialties' => $profile?->specialties ?? [],
-                'services' => $profile?->services ?? [],
-                'availabilities' => $profile?->availabilitySlots ?? [],
+                'headline' => $profile->headline ?? '',
+                'bio' => $profile->bio ?? '',
+                'avatar_url' => $profile->avatar_url,
+                'service_zone' => $profile->service_zone ?? '',
+                'service_area' => $profile->service_zone ?? '',
+                'years_experience' => $profile->years_experience ?? 0,
+                'experience_years' => $profile->years_experience ?? 0,
+                'is_available' => $profile->is_visible ?? true,
+                'rating_avg' => $profile->rating_avg ?? 0,
+                'rating_count' => $profile->rating_count ?? 0,
+                'completed_count' => $profile->completed_count ?? 0,
+                'specialties' => $profile->specialties ?? [],
+                'services' => $profile->services ?? [],
+                'availabilities' => $profile->availabilitySlots ?? [],
             ],
         ]);
     }
