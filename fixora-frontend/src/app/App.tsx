@@ -60,13 +60,17 @@ function FixoraRouter() {
 
       {modal.type === "request-service" && (
         <RequestServiceModal
+          key={`req-${modal.technician?.id ?? "none"}-${modal.defaultSpecialty ?? ""}`}
           defaultSpecialty={modal.defaultSpecialty}
           technician={modal.technician}
         />
       )}
 
       {modal.type === "technician-detail" && (
-        <TechnicianDetailModal technician={modal.technician} />
+        <TechnicianDetailModal
+          key={`detail-${modal.technician.id}`}
+          technician={modal.technician}
+        />
       )}
 
       {modal.type === "forgot-password" && (
